@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTracker - Tracciamento completo</title>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const behaviorData = {
+            mouse: [],
+            clicks: [],
+            scroll: [],
+            screen_resolution: `${window.innerWidth}x${window.innerHeight}`,
+            language: navigator.language || navigator.userLanguage,
+            plugins: [],
+            is_touch_device: 'ontouchstart' in window || navigator.maxTouchPoints > 0,
+            cpu_cores: navigator.hardwareConcurrency || 4,
+            device_memory: navigator.deviceMemory || 4,
+            threat_score: 0,
+            is_vpn: false,
+            is_tor: false,
+            is_bot: false,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            webrtc_support: typeof RTCPeerConnection !== 'undefined',
+            device_fp: navigator.userAgent + navigator.platform
+        };
+
+        // Plugin info
+        Array.from(navigator.plugins).forEach(p => behaviorData.plugins.push(p.name));
+
+        // Mouse move
+        document.addEventListener('mousemove', e => {
+            behaviorData.mouse.push({ x: e.clientX, y: e.clientY, t: Date.now() });
+        });
+
+        // Click
+        document.addEventListener('click', e => {
+            behaviorData.clicks.push({ x: e.clientX, y: e.clientY, t: Date.now(), tag: e.target.tagName });
+        });
+
+        // Scroll
+        window.addEventListener('scroll', () => {
+            behaviorData.scroll.push({ y: window.scrollY, t: Date.now() });
+        });
+
+        // Canvas Fingerprint
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('TTracker FP', 2, 15);
+            behaviorData.canvas_fp = canvas.toDataURL();
+        } catch (e) {
+            console.error('Canvas FP error', e);
+        }
+
+        // WebGL Fingerprint
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (gl) {
+                const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                behaviorData.webgl_fp = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || 'Unknown';
+            }
+        } catch (e) {
+            console.error('WebGL FP error', e);
+        }
+
+        // Audio Fingerprint (mock semplificato)
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            behaviorData.audio_fp = 'audio-' + audioCtx.sampleRate;
+        } catch (e) {
+            console.error('Audio FP error', e);
+        }
+
+        // Geolocalizzazione + invio dati
+        navigator.geolocation.getCurrentPosition(pos => {
+            behaviorData.latitude = pos.coords.latitude;
+            behaviorData.longitude = pos.coords.longitude;
+
+            fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${behaviorData.latitude}&longitude=${behaviorData.longitude}&localityLanguage=en`)
+                .then(res => res.json())
+                .then(data => {
+                    behaviorData.city = data.city || '';
+                    behaviorData.country = data.countryName || '';
+                    behaviorData.region = data.principalSubdivision || '';
+                    waitAndSend();
+                })
+                .catch(err => {
+                    console.warn('Geo fallback', err);
+                    waitAndSend();
+                });
+        }, err => {
+            console.warn('Geo denied', err);
+            waitAndSend();
+        });
+
+        // Invia i dati 3s dopo aver raccolto i fingerprint
+        function waitAndSend() {
+            setTimeout(() => {
+                const data = {
+                    ...behaviorData,
+                    page_url: window.location.pathname
+                };
+                navigator.sendBeacon('/track-behavior/', JSON.stringify(data));
+            }, 3000);
+        }
+
+        // Invia anche quando si lascia la pagina
+        window.addEventListener('beforeunload', () => {
+            const data = {
+                ...behaviorData,
+                page_url: window.location.pathname
+            };
+            navigator.sendBeacon('/track-behavior/', JSON.stringify(data));
+        });
+
+        
+        function sendBehaviorData() {
+            const data = {
+                ...behaviorData,
+                page_url: window.location.pathname,
+            };
+        
+            console.log("Inviando dati comportamento:", data); // 🔍 DEBUG
+        
+            navigator.sendBeacon('/track-behavior/', JSON.stringify(data));
+        }
+        
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                navigator.sendBeacon('/track-end/', JSON.stringify({
+                    page_url: window.location.pathname,
+                }));
+            }
+        });
+        
+
+
+    });
+    </script>
+</head>
+<body>
+    <h1>Benvenuto in TTracker</h1>
+    <p>Il tracciamento è attivo. Controlla l'amministrazione per i dati.</p>
+</body>
+</html>
